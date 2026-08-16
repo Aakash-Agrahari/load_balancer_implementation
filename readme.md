@@ -1,366 +1,567 @@
-# Load Balancer From Scratch
+# Load Balancer from scratch
 
-A practical implementation of a load balancer using Node.js and JavaScript.
+A practical load balancer built from scratch using Node.js and JavaScript.
 
-The goal of this project is to understand how load balancing works internally by building the core concepts ourselves before looking at tools such as Nginx and AWS Elastic Load Balancing.
+The purpose of this project is to understand how load balancing works internally by building the core concepts ourselves instead of directly relying on Nginx, AWS Elastic Load Balancer, or another managed service.
+
+The project is being developed step by step, starting with multiple backend instances and then adding request forwarding, load distribution, health checks, and failure handling.
 
 ---
 
-## What is this project?
+## Why I Built This
 
-A load balancer sits between clients and multiple application servers.
+When an application receives a large number of requests, running everything on a single server can become a bottleneck.
 
-Instead of sending every request directly to one server:
+One common solution is to run multiple instances of the same application and distribute incoming requests between them.
+
+The basic architecture looks like this:
+
+                    Client
+                       |
+                       v
+                +--------------+
+                | Load Balancer|
+                +------+-------+
+                       |
+             +---------+---------+
+             |         |         |
+             v         v         v
+          Server 1  Server 2  Server 3
+           :3001     :3002     :3003
+
+The main goal of this project is to understand what happens behind this architecture by implementing the important parts ourselves.
+
+---
+
+## Current Architecture
+
+The project uses one reusable backend application instead of creating separate files such as `server1.js`, `server2.js`, and `server3.js`.
+
+The same `server.js` is started multiple times on different ports.
 
 ```text
-Client
-  |
-  v
-Server
+load-balancer/
+│
+├── backend/
+│   └── server.js
+│
+├── load-balancer/
+│   └── loadBalancer.js
+│
+├── package.json
+├── package-lock.json
+├── .gitignore
+└── README.md
 ```
 
-we put a load balancer in between:
+The same backend application runs as multiple instances:
 
 ```text
-                  Client
-                    |
-                    v
-              Load Balancer
-              /     |     \
-             v      v      v
-          Server 1 Server 2 Server 3
+                    backend/server.js
+                           |
+             +-------------+-------------+
+             |             |             |
+             v             v             v
+          Instance 1    Instance 2    Instance 3
+           :3001         :3002         :3003
 ```
 
-The load balancer decides which backend server should handle each request.
-
-This becomes important when an application needs to handle more traffic than a single server can comfortably handle.
+This approach is closer to how horizontally scaled applications are normally structured.
 
 ---
 
-## Project Goal
+## Technology Stack
 
-Rather than immediately using an existing load-balancing service, I am building a simplified version from scratch.
+- Node.js
+- JavaScript
+- ES Modules
+- Express.js
+- HTTP
+- npm
 
-The idea is to understand:
+No AWS load-balancing service or other managed cloud service is being used at this stage.
 
-- How requests are forwarded
-- How backend servers are selected
-- Round Robin
-- Random routing
-- Least Connections
-- Health checks
-- Failure handling
-- Horizontal scaling
-- Reverse proxies
-- How real load balancers differ from this implementation
+Everything is running locally so that the underlying concepts can be understood first.
 
 ---
 
-## Planned Architecture
+## ES Modules
 
-The initial version will run several Node.js servers locally:
+This project uses modern JavaScript ES Modules instead of CommonJS.
+
+For example:
+
+```javascript
+import express from "express";
+```
+
+instead of:
+
+```javascript
+const express = require("express");
+```
+
+The `package.json` contains:
+
+```json
+"type": "module"
+```
+
+This allows the project to use `import` and `export` syntax.
+
+---
+
+# Backend Server
+
+The backend application is located at:
 
 ```text
-                         Postman
-                            |
-                            v
-                    +---------------+
-                    | Load Balancer |
-                    |     :3000     |
-                    +-------+-------+
-                            |
-              +-------------+-------------+
-              |             |             |
-              v             v             v
-        +-----------+ +-----------+ +-----------+
-        | Server 1  | | Server 2  | | Server 3  |
-        |   :3001   | |   :3002   | |   :3003   |
-        +-----------+ +-----------+ +-----------+
+backend/server.js
 ```
 
-The client only communicates with the load balancer.
+The server reads its port from an environment variable:
 
-The backend servers are responsible for processing the actual requests.
+```javascript
+const PORT = process.env.PORT || 3001;
+```
 
----
-
-## Stage 1 - Multiple Backend Servers
-
-The first step is to run multiple Node.js servers simultaneously.
+Because the port is configurable, the same application can be started multiple times.
 
 For example:
 
 ```text
-Server 1 -> localhost:3001
-Server 2 -> localhost:3002
-Server 3 -> localhost:3003
+Instance 1 → PORT=3001
+Instance 2 → PORT=3002
+Instance 3 → PORT=3003
 ```
 
-Each server will return its own identity so that the routing behavior can be observed easily.
+There is no need to duplicate the backend code.
 
-Example:
+---
+
+## Running the Backend Instances
+
+### Server 1
+
+Open a terminal and run:
+
+```powershell
+$env:PORT=3001
+node backend/server.js
+```
+
+### Server 2
+
+Open another terminal:
+
+```powershell
+$env:PORT=3002
+node backend/server.js
+```
+
+### Server 3
+
+Open another terminal:
+
+```powershell
+$env:PORT=3003
+node backend/server.js
+```
+
+The terminals should show:
 
 ```text
-Hello from Server 1
-Hello from Server 2
-Hello from Server 3
+Server 3001 is running
+Server 3002 is running
+Server 3003 is running
 ```
 
 ---
 
-## Stage 2 - Build the Load Balancer
+## Testing the Backend Instances
 
-The load balancer will run on:
+At the current stage, each backend can be accessed independently.
+
+### Server 1
+
+```text
+GET http://localhost:3001/
+```
+
+Response:
+
+```text
+Hello from Server 3001
+```
+
+### Server 2
+
+```text
+GET http://localhost:3002/
+```
+
+Response:
+
+```text
+Hello from Server 3002
+```
+
+### Server 3
+
+```text
+GET http://localhost:3003/
+```
+
+Response:
+
+```text
+Hello from Server 3003
+```
+
+At this point there is no load balancing yet.
+
+The client still has to manually choose which backend server to call.
+
+---
+
+# Load Balancer
+
+The load balancer will be implemented separately:
+
+```text
+load-balancer/loadBalancer.js
+```
+
+It will listen on:
 
 ```text
 localhost:3000
 ```
 
-A request such as:
+The expected architecture is:
 
-```http
+```text
+                         Client
+                            |
+                            | :3000
+                            v
+                   +-------------------+
+                   |   Load Balancer   |
+                   +---------+---------+
+                             |
+               +-------------+-------------+
+               |             |             |
+               v             v             v
+            :3001         :3002         :3003
+           Server 1      Server 2      Server 3
+```
+
+The client will only need to communicate with the load balancer.
+
+For example:
+
+```text
 GET http://localhost:3000/
 ```
 
-will be received by the load balancer.
-
-The load balancer will then forward the request to one of the backend servers.
+The load balancer will decide which backend instance should handle the request.
 
 ---
 
-## Stage 3 - Round Robin
+# Planned Load Balancing Flow
 
-The first routing strategy will be Round Robin.
-
-For example:
+The load balancer will receive a request:
 
 ```text
-Request 1 -> Server 1
-Request 2 -> Server 2
-Request 3 -> Server 3
-Request 4 -> Server 1
-Request 5 -> Server 2
-Request 6 -> Server 3
-```
-
-The servers are selected sequentially.
-
-Round Robin is simple and works well when the backend servers have similar capacity and requests have relatively similar processing costs.
-
----
-
-## Stage 4 - Other Routing Strategies
-
-After Round Robin, the project will explore other approaches.
-
-### Random
-
-A backend server is selected randomly.
-
-```text
-Request -> Random Server
-```
-
-### Least Connections
-
-The load balancer keeps track of active connections.
-
-For example:
-
-```text
-Server 1 -> 5 connections
-Server 2 -> 2 connections
-Server 3 -> 7 connections
-```
-
-The next request would be sent to Server 2.
-
----
-
-## Stage 5 - Health Checks
-
-A real load balancer should not blindly send traffic to servers that are unavailable.
-
-The project will add health checking.
-
-Example:
-
-```text
-Server 1 -> Healthy
-Server 2 -> Healthy
-Server 3 -> Unhealthy
-```
-
-The load balancer should stop sending new requests to Server 3.
-
----
-
-## Stage 6 - Failure Simulation
-
-One of the practical tests will be intentionally stopping a backend server.
-
-For example:
-
-```text
-Before:
-
+Client
+   |
+   | GET /
+   v
 Load Balancer
-    |
-    +--> Server 1 ✓
-    +--> Server 2 ✓
-    +--> Server 3 ✓
 ```
 
-After Server 2 crashes:
+It will select one backend server:
 
 ```text
 Load Balancer
-    |
-    +--> Server 1 ✓
-    +--> Server 2 ✗
-    +--> Server 3 ✓
+      |
+      v
+Server 1
 ```
 
-The goal is for the load balancer to detect the failure and continue routing requests to healthy servers.
+The backend response will then travel back through the load balancer:
+
+```text
+Server 1
+   |
+   | Response
+   v
+Load Balancer
+   |
+   v
+Client
+```
+
+The client should not need to know which backend server actually handled the request.
 
 ---
 
-## Why build this ourselves?
+# Round Robin
 
-Tools such as Nginx and cloud load balancers already solve these problems.
+The first load-balancing algorithm we will implement is **Round Robin**.
 
-However, using those tools immediately can hide what is actually happening.
+The basic idea is simple.
 
-Building a small version ourselves makes the underlying concepts easier to understand.
+Requests are distributed sequentially across the available servers.
 
-Once the basic implementation is complete, the project will compare it with real-world solutions.
+For example:
+
+```text
+Request 1 → Server 1
+Request 2 → Server 2
+Request 3 → Server 3
+Request 4 → Server 1
+Request 5 → Server 2
+Request 6 → Server 3
+```
+
+This allows requests to be distributed across the backend instances without manually selecting a server for every request.
 
 ---
 
-## Nginx
+# Request Forwarding
 
-A later stage of the project will use Nginx as a reverse proxy/load balancer.
+The load balancer will need to forward incoming HTTP requests to the selected backend server.
 
-Conceptually:
+For example:
+
+```text
+Client
+   |
+   | GET /users
+   v
+Load Balancer :3000
+   |
+   | Forward request
+   v
+Backend :3001
+   |
+   | Response
+   v
+Load Balancer
+   |
+   v
+Client
+```
+
+This introduces the concept of a reverse proxy.
+
+The load balancer acts as an intermediary between the client and backend servers.
+
+---
+
+# Health Checks
+
+A server may be running normally one moment and become unavailable later.
+
+For example:
+
+```text
+Server 1 → Healthy
+Server 2 → Healthy
+Server 3 → Unhealthy
+```
+
+The load balancer should eventually be able to detect unavailable servers and avoid sending requests to them.
+
+This will be implemented after the basic load-balancing functionality is working.
+
+---
+
+# Handling Server Failures
+
+We will intentionally stop one of the backend instances and test what happens.
+
+For example:
+
+```text
+Server 1 → Running
+Server 2 → Stopped
+Server 3 → Running
+```
+
+The goal is to make the load balancer understand that Server 2 is unavailable and continue sending requests to the healthy servers.
+
+---
+
+# Concurrent Requests
+
+The project will also be tested with multiple requests arriving at approximately the same time.
+
+This will help demonstrate why load balancing becomes important when many clients are accessing an application simultaneously.
+
+---
+
+# What This Project Is Teaching
+
+The main purpose of this project is to understand the concepts behind scalable backend systems.
+
+Topics covered include:
+
+- Horizontal scaling
+- Multiple application instances
+- Load balancing
+- Round Robin
+- HTTP request forwarding
+- Reverse proxy concepts
+- Health checks
+- Server failure handling
+- Concurrent requests
+- Stateless backend architecture
+- Basic scalability concepts
+
+---
+
+# Local Architecture
+
+Everything is currently running on the local machine.
+
+Before implementing the load balancer:
+
+```text
+                        Windows Machine
+                              |
+              +---------------+---------------+
+              |               |               |
+              v               v               v
+          Node.js         Node.js         Node.js
+          :3001           :3002           :3003
+        Backend #1       Backend #2       Backend #3
+```
+
+After implementing the load balancer:
+
+```text
+                         Client
+                            |
+                            v
+                     localhost:3000
+                            |
+                            v
+                   Node.js Load Balancer
+                            |
+              +-------------+-------------+
+              |             |             |
+              v             v             v
+           :3001         :3002         :3003
+          Backend       Backend       Backend
+          Instance      Instance      Instance
+             1             2             3
+```
+
+---
+
+# AWS and Cloud Services
+
+AWS is not being used in the initial implementation.
+
+The project is intentionally being built locally first.
+
+The reason is simple: I want to understand what a load balancer actually does before using a managed service that handles these responsibilities automatically.
+
+After understanding the custom implementation, the same concepts can be compared with production technologies such as:
+
+- Nginx
+- AWS Application Load Balancer
+- AWS Network Load Balancer
+- Docker
+- Kubernetes
+- Cloud-based auto scaling
+
+The objective is to understand the underlying concepts rather than simply using a managed service without knowing what happens behind the scenes.
+
+---
+
+# Project Status
+
+## Completed
+
+- Node.js project setup
+- Express setup
+- ES Module configuration
+- Reusable backend server
+- Multiple backend instances
+- Running the same server on different ports
+- Testing backend instances independently
+
+## In Progress
+
+- Custom Node.js load balancer
+- HTTP request forwarding
+- Round Robin request distribution
+
+## Planned
+
+- Round Robin implementation
+- Request forwarding
+- Health checks
+- Failed server detection
+- Concurrent request testing
+- Failure handling
+- Reverse proxy concepts
+- Comparison with Nginx
+- Understanding AWS load balancing
+
+---
+
+# Learning Goal
+
+By the end of this project, I want to understand not only how to use a load balancer, but also what happens internally when a request travels through a load-balanced system.
+
+The final architecture should look like:
 
 ```text
 Client
   |
   v
-Nginx
+Load Balancer
   |
-  +----> Node.js Server 1
+  +------> Backend Instance 1
   |
-  +----> Node.js Server 2
+  +------> Backend Instance 2
   |
-  +----> Node.js Server 3
+  +------> Backend Instance 3
 ```
 
-This will help compare a custom JavaScript implementation with a commonly used production tool.
+The main questions this project aims to answer are:
+
+1. Why do we need multiple backend instances?
+2. How does a load balancer select a server?
+3. How does Round Robin work?
+4. How does a load balancer forward an HTTP request?
+5. What happens when a backend server goes down?
+6. How can a load balancer detect unhealthy servers?
+7. How does load balancing improve availability and scalability?
+8. How does our implementation compare with production solutions such as Nginx and AWS load balancers?
 
 ---
 
-## AWS
+## Final Goal
 
-AWS will be covered after understanding the underlying implementation.
-
-The relevant AWS service for HTTP/HTTPS applications is the Application Load Balancer (ALB), which is part of Elastic Load Balancing.
-
-The architecture will look roughly like:
+The final goal is to be able to look at a system such as:
 
 ```text
-                   Internet
-                       |
-                       v
-                AWS Application
-                Load Balancer
-                       |
-             +---------+---------+
-             |         |         |
-             v         v         v
-           EC2       EC2       EC2
-         Instance  Instance  Instance
+                         Client
+                            |
+                            v
+                    +---------------+
+                    | Load Balancer |
+                    +-------+-------+
+                            |
+                +-----------+-----------+
+                |           |           |
+                v           v           v
+             Server 1    Server 2    Server 3
 ```
 
-The AWS implementation will be treated as a separate stage rather than hiding the load-balancing concepts behind a managed service from the beginning.
-
----
-
-## Tech Stack
-
-Initial implementation:
-
-- JavaScript
-- Node.js
-- Express.js
-
-Later stages may include:
-
-- Nginx
-- AWS Application Load Balancer
-- EC2
-
----
-
-## Current Status
-
-### Completed
-
-- [ ] Project setup
-- [ ] First backend server
-
-### In Progress
-
-- [ ] Multiple backend servers
-- [ ] Custom load balancer
-- [ ] Round Robin
-
-### Planned
-
-- [ ] Random routing
-- [ ] Least Connections
-- [ ] Health checks
-- [ ] Failure detection
-- [ ] Nginx implementation
-- [ ] AWS implementation
-- [ ] Production architecture discussion
-
----
-
-## What I want to learn from this project
-
-The main goal isn't to build a production replacement for Nginx or AWS.
-
-The goal is to understand the ideas behind load balancing:
-
-```text
-Incoming traffic
-       |
-       v
-Load balancing decision
-       |
-       v
-Healthy backend
-       |
-       v
-Request processing
-```
-
-Once these fundamentals are clear, tools such as Nginx, AWS ALB and Kubernetes become much easier to understand.
-
----
-
-## Future Improvements
-
-Some possible improvements after the basic implementation:
-
-- Configurable backend servers
-- Dynamic server registration
-- Better health checks
-- Connection tracking
-- Retry mechanisms
-- Request timeouts
-- Logging
-- Metrics
-- Graceful handling of backend failures
-- Distributed load balancing
+and understand what is happening at each step instead of treating the load balancer as a black box.
