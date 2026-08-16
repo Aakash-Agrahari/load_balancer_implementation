@@ -7,6 +7,13 @@ app.get('/', (req,res) => {
     res.send(`Hello from Server ${PORT}`)
 });
 
+app.get('/health', (res,req) => {
+    res.statusCode(200).json({
+        status: "UP",
+        port: PORT
+    });
+});
+
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
