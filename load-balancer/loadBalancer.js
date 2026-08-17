@@ -23,7 +23,9 @@ servers.forEach(server => {
     metrics.byServer[server.port] = {
         requests: 0,
         successful: 0,
-        failed: 0
+        failed: 0,
+        totalResponseTime: 0,
+        averageResponseTime: 0
     };
 
 });
@@ -230,6 +232,20 @@ const server = http.createServer((req, res) => {
             metrics.byServer[
                 targetServer.port
             ].successful++;
+
+            metrics.byServer[
+                targetServer.port
+            ].totalResponseTime += responseTime;
+
+            metrics.byServer[
+                targetServer.port
+            ].averageResponseTime = 
+                metrics.byServer[
+                    targetServer.port
+                ].totalResponseTime /
+                metrics.byServer[
+                    targetServer.port
+                ].successful;
 
 
             // Request log
