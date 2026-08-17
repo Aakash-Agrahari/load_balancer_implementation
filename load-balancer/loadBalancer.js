@@ -1,11 +1,32 @@
 import http from "http";
-import {config} from "./config.js";
+import { config } from "./config.js";
 
 const PORT = config.port;
+
 const servers = config.backends;
 
 let currentServerIndex = 0;
 
+// Metrics
+const metrics = {
+    totalRequests: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+
+    byServer: {}
+};
+
+
+// Initialize metrics for every backend
+servers.forEach(server => {
+
+    metrics.byServer[server.port] = {
+        requests: 0,
+        successful: 0,
+        failed: 0
+    };
+
+});
 
 // Health Check
 function checkServerHealth(server) {
@@ -25,6 +46,7 @@ function checkServerHealth(server) {
             if (response.statusCode === 200) {
 
                 if (!server.healthy) {
+
                     console.log(
                         `Server ${server.port} is healthy again`
                     );
@@ -34,20 +56,26 @@ function checkServerHealth(server) {
 
             } else {
 
-                server.healthy = false;
+                if (server.healthy) {
 
-                console.log(
-                    `Server ${server.port} is unhealthy`
-                );
+                    console.log(
+                        `Server ${server.port} is unhealthy`
+                    );
+                }
+
+                server.healthy = false;
             }
 
             response.resume();
         }
     );
 
+
+    // Backend connection failed
     healthRequest.on("error", () => {
 
         if (server.healthy) {
+
             console.log(
                 `Server ${server.port} is DOWN`
             );
@@ -56,11 +84,14 @@ function checkServerHealth(server) {
         server.healthy = false;
     });
 
+
+    // Backend did not respond in time
     healthRequest.on("timeout", () => {
 
         healthRequest.destroy();
 
         if (server.healthy) {
+
             console.log(
                 `Server ${server.port} timed out`
             );
@@ -69,19 +100,20 @@ function checkServerHealth(server) {
         server.healthy = false;
     });
 
+
     healthRequest.end();
 }
-
 
 // Run health checks periodically
 setInterval(() => {
 
     servers.forEach(server => {
+
         checkServerHealth(server);
+
     });
 
 }, config.healthCheckInterval);
-
 
 // Find next healthy server
 function getNextHealthyServer() {
@@ -95,7 +127,9 @@ function getNextHealthyServer() {
             (currentServerIndex + 1)
             % servers.length;
 
+
         if (server.healthy) {
+
             return server;
         }
     }
@@ -104,49 +138,109 @@ function getNextHealthyServer() {
 }
 
 
-
 // Load Balancer
 const server = http.createServer((req, res) => {
 
+    const startTime = Date.now();
+
+    // Metrics endpoint
+    if (req.url === "/metrics") {
+
+        res.writeHead(200, {
+            "Content-Type": "application/json"
+        });
+
+        res.end(
+            JSON.stringify(metrics, null, 2)
+        );
+
+        return;
+    }
+
+
+    // Count normal application requests
+    metrics.totalRequests++;
+
+
+    // Find healthy backend
     const targetServer =
         getNextHealthyServer();
 
+    // No healthy backend
     if (!targetServer) {
 
         console.log(
             "No healthy backend servers available"
         );
 
+        metrics.failedRequests++;
+
+
         res.writeHead(503, {
             "Content-Type": "application/json"
         });
 
+
         res.end(
             JSON.stringify({
-            error: "Service Unavailable",
-            message: "No healthy backend servers are available"
-        })
+                error: "Service Unavailable",
+                message:
+                    "No healthy backend servers are available"
+            })
         );
 
         return;
     }
 
+    // Log forwarding
     console.log(
-        `Forwarding ${req.method} ${req.url} → localhost:${targetServer.port}`
+        `Forwarding ${req.method} ${req.url} → ` +
+        `localhost:${targetServer.port}`
     );
 
+    // Proxy request configuration
     const options = {
+
         hostname: targetServer.host,
+
         port: targetServer.port,
+
         path: req.url,
+
         method: req.method,
+
         headers: req.headers
     };
 
+
+    // Send request to backend
     const proxyRequest = http.request(
         options,
         (proxyResponse) => {
 
+            const responseTime =
+                Date.now() - startTime;
+
+            metrics.successfulRequests++;
+
+            metrics.byServer[
+                targetServer.port
+            ].requests++;
+
+            metrics.byServer[
+                targetServer.port
+            ].successful++;
+
+
+            // Request log
+            console.log(
+                `[REQUEST] ${req.method} ${req.url} → ` +
+                `${targetServer.port} → ` +
+                `${proxyResponse.statusCode} → ` +
+                `${responseTime}ms`
+            );
+
+            // Forward response
             res.writeHead(
                 proxyResponse.statusCode,
                 proxyResponse.headers
@@ -156,34 +250,63 @@ const server = http.createServer((req, res) => {
         }
     );
 
+    // Backend request error
     proxyRequest.on("error", (error) => {
 
+        const responseTime =
+            Date.now() - startTime;
+
+        metrics.failedRequests++;
+
+        metrics.byServer[
+            targetServer.port
+        ].requests++;
+
+        metrics.byServer[
+            targetServer.port
+        ].failed++;
+
+        // Log error
         console.error(
-            `Proxy error for server ${targetServer.port}:`,
-            error.message
+            `[ERROR] ${req.method} ${req.url} → ` +
+            `${targetServer.port} → ` +
+            `502 → ${responseTime}ms → ` +
+            `${error.message}`
         );
 
-        targetServer.healthy = false;
+        targetServer.healthy = false; // Mark backend unhealthy
 
         res.writeHead(502, {
-            "Content-Type": "text/plain"
+            "Content-Type": "application/json"
         });
 
-        res.end("Bad Gateway");
+        res.end(
+            JSON.stringify({
+                error: "Bad Gateway",
+                message:
+                    "Backend server failed"
+            })
+        );
     });
-
-    req.pipe(proxyRequest);
+    
+    req.pipe(proxyRequest); // Forward client request body
 });
 
 
+// Start load balancer
 server.listen(PORT, () => {
 
     console.log(
         `Load balancer is running on port ${PORT}`
     );
 
-    // Run an initial health check immediately
+
+    // Run initial health checks immediately
+
     servers.forEach(server => {
+
         checkServerHealth(server);
+
     });
+
 });
