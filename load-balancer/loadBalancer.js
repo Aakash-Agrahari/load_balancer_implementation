@@ -1,32 +1,13 @@
 import http from "http";
+import {config} from "./config.js";
 
-const PORT = 3000;
-
-const servers = [
-    {
-        host: "localhost",
-        port: 3001,
-        healthy: true
-    },
-    {
-        host: "localhost",
-        port: 3002,
-        healthy: true
-    },
-    {
-        host: "localhost",
-        port: 3003,
-        healthy: true
-    }
-];
+const PORT = config.port;
+const servers = config.backends;
 
 let currentServerIndex = 0;
 
 
-// ------------------------------------
 // Health Check
-// ------------------------------------
-
 function checkServerHealth(server) {
 
     const options = {
@@ -34,7 +15,7 @@ function checkServerHealth(server) {
         port: server.port,
         path: "/health",
         method: "GET",
-        timeout: 2000
+        timeout: config.healthCheckTimeout
     };
 
     const healthRequest = http.request(
@@ -92,23 +73,17 @@ function checkServerHealth(server) {
 }
 
 
-// ------------------------------------
 // Run health checks periodically
-// ------------------------------------
-
 setInterval(() => {
 
     servers.forEach(server => {
         checkServerHealth(server);
     });
 
-}, 5000);
+}, config.healthCheckInterval);
 
 
-// ------------------------------------
 // Find next healthy server
-// ------------------------------------
-
 function getNextHealthyServer() {
 
     for (let i = 0; i < servers.length; i++) {
@@ -129,10 +104,8 @@ function getNextHealthyServer() {
 }
 
 
-// ------------------------------------
-// Load Balancer
-// ------------------------------------
 
+// Load Balancer
 const server = http.createServer((req, res) => {
 
     const targetServer =
