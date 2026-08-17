@@ -118,11 +118,14 @@ const server = http.createServer((req, res) => {
         );
 
         res.writeHead(503, {
-            "Content-Type": "text/plain"
+            "Content-Type": "application/json"
         });
 
         res.end(
-            "Service Unavailable"
+            JSON.stringify({
+            error: "Service Unavailable",
+            message: "No healthy backend servers are available"
+        })
         );
 
         return;
