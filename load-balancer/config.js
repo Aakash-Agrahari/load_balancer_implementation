@@ -10,7 +10,7 @@ export const config = {
             .split(",")
             .map(port => ({
                 host: "localhost",
-                port: Number(port.trim),
+                port: Number(port.trim()),
                 healthy: true
             }))
 };
