@@ -11,6 +11,7 @@ export const config = {
             .map(port => ({
                 host: "localhost",
                 port: Number(port.trim()),
-                healthy: true
+                healthy: true,
+                weight: 1
             }))
 };
