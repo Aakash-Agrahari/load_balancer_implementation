@@ -139,6 +139,41 @@ function getNextHealthyServer() {
     return null;
 }
 
+//find the fastest healthy server
+function getFastestHealthyServer(){
+    const healthyServers = servers.filter(server => server.healthy);
+
+    const serversWithMetrics =
+        healthyServers.filter(server =>
+            metrics.byServer[server.port]
+                .successful > 0
+        );
+
+    // If no server has latency data yet,
+    // fall back to Round Robin.
+    if (serversWithMetrics.length === 0) {
+        return getNextHealthyServer();
+    }
+
+    return serversWithMetrics.reduce(
+        (fastest, current) => {
+
+            const fastestLatency =
+                metrics.byServer[fastest.port]
+                    .averageResponseTime;
+
+            const currentLatency =
+                metrics.byServer[current.port]
+                    .averageResponseTime;
+
+            return currentLatency < fastestLatency
+                ? current
+                : fastest;
+        }
+    );
+}
+
+
 
 // Load Balancer
 const server = http.createServer((req, res) => {
@@ -163,6 +198,11 @@ const server = http.createServer((req, res) => {
     // Count normal application requests
     metrics.totalRequests++;
 
+
+    console.log(
+        "Fastest server:",
+        getFastestHealthyServer()?.port
+    );
 
     // Find healthy backend
     const targetServer =
