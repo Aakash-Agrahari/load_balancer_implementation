@@ -209,7 +209,9 @@ const server = http.createServer((req, res) => {
         getNextHealthyServer();*/
 
     //Find fastest server
-    const targetServer = getFastestHealthyServer();    
+    //const targetServer = getFastestHealthyServer();   
+    
+    const targetServer = getWeightedServer();
 
     // No healthy backend
     if (!targetServer) {
