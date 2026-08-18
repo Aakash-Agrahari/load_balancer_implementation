@@ -198,15 +198,18 @@ const server = http.createServer((req, res) => {
     // Count normal application requests
     metrics.totalRequests++;
 
-
-    console.log(
+    // shows the fastest server in the console
+    /*console.log(
         "Fastest server:",
         getFastestHealthyServer()?.port
-    );
+    );*/
 
     // Find healthy backend
-    const targetServer =
-        getNextHealthyServer();
+    /*const targetServer =
+        getNextHealthyServer();*/
+
+    //Find fastest server
+    const targetServer = getFastestHealthyServer();    
 
     // No healthy backend
     if (!targetServer) {
