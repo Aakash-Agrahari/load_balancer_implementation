@@ -117,7 +117,7 @@ setInterval(() => {
 
 }, config.healthCheckInterval);
 
-// Find next healthy server
+// Find next healthy server based on Round Robin
 function getNextHealthyServer() {
 
     for (let i = 0; i < servers.length; i++) {
@@ -139,7 +139,7 @@ function getNextHealthyServer() {
     return null;
 }
 
-//find the fastest healthy server
+//find the fastest healthy server based on latency
 function getFastestHealthyServer(){
     const healthyServers = servers.filter(server => server.healthy);
 
@@ -171,6 +171,39 @@ function getFastestHealthyServer(){
                 : fastest;
         }
     );
+}
+
+//find a healthy server based on weights
+function getWeightedServer() {
+
+    const healthyServers =
+        servers.filter(server => server.healthy);
+
+    if (healthyServers.length === 0) {
+        return null;
+    }
+
+    const totalWeight =
+        healthyServers.reduce(
+            (total, server) => total + server.weight,
+            0
+        );
+
+    let random =
+        Math.random() * totalWeight;
+
+    for (const server of healthyServers) {
+
+        random -= server.weight;
+
+        if (random < 0) {
+            return server;
+        }
+    }
+
+    return healthyServers[
+        healthyServers.length - 1
+    ];
 }
 
 
