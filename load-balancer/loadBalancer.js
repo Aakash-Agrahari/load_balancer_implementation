@@ -7,6 +7,8 @@ const servers = config.backends;
 
 let currentServerIndex = 0;
 
+let weightedRoundRobinIndex = 0;
+
 // Metrics
 const metrics = {
     totalRequests: 0,
