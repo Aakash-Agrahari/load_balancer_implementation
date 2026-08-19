@@ -7,7 +7,8 @@ const servers = config.backends;
 
 let currentServerIndex = 0;
 
-let weightedRoundRobinIndex = 0;
+// Maximum number of retry attempts after the first backend fails
+const MAX_RETRIES = 1;
 
 // Metrics
 const metrics = {
@@ -18,16 +19,13 @@ const metrics = {
     byServer: {}
 };
 
-
 // Initialize metrics for every backend
 servers.forEach(server => {
 
     metrics.byServer[server.port] = {
         requests: 0,
         successful: 0,
-        failed: 0,
-        totalResponseTime: 0,
-        averageResponseTime: 0
+        failed: 0
     };
 
 });
@@ -54,6 +52,9 @@ function checkServerHealth(server) {
                     console.log(
                         `Server ${server.port} is healthy again`
                     );
+
+                    // Reset scheduling state when server recovers
+                    server.currentWeight = 0;
                 }
 
                 server.healthy = true;
@@ -119,7 +120,8 @@ setInterval(() => {
 
 }, config.healthCheckInterval);
 
-// Find next healthy server based on Round Robin
+
+// Find next healthy server
 function getNextHealthyServer() {
 
     for (let i = 0; i < servers.length; i++) {
@@ -141,80 +143,40 @@ function getNextHealthyServer() {
     return null;
 }
 
-//find the fastest healthy server based on latency
-function getFastestHealthyServer(){
-    const healthyServers = servers.filter(server => server.healthy);
 
-    const serversWithMetrics =
-        healthyServers.filter(server =>
-            metrics.byServer[server.port]
-                .successful > 0
-        );
-
-    // If no server has latency data yet,
-    // fall back to Round Robin.
-    if (serversWithMetrics.length === 0) {
-        return getNextHealthyServer();
-    }
-
-    return serversWithMetrics.reduce(
-        (fastest, current) => {
-
-            const fastestLatency =
-                metrics.byServer[fastest.port]
-                    .averageResponseTime;
-
-            const currentLatency =
-                metrics.byServer[current.port]
-                    .averageResponseTime;
-
-            return currentLatency < fastestLatency
-                ? current
-                : fastest;
-        }
-    );
-}
-
-//find a healthy server based on weights
-function getWeightedServer() {
+// Find a healthy server excluding servers that already failed
+function getHealthyServerExcluding(excludedServers) {
 
     const healthyServers =
-        servers.filter(server => server.healthy);
+        servers.filter(
+            server =>
+                server.healthy &&
+                !excludedServers.includes(server)
+        );
 
     if (healthyServers.length === 0) {
+
         return null;
     }
 
-    const totalWeight =
-        healthyServers.reduce(
-            (total, server) => total + server.weight,
-            0
-        );
-
-    let random =
-        Math.random() * totalWeight;
-
-    for (const server of healthyServers) {
-
-        random -= server.weight;
-
-        if (random < 0) {
-            return server;
-        }
-    }
-
-    return healthyServers[
-        healthyServers.length - 1
-    ];
+    return getSmoothWeightedRoundRobinServer(
+        healthyServers
+    );
 }
 
-//find healthy server based on weights and round robin
-function getSmoothWeightedRoundRobinServer() {
+
+// Smooth Weighted Round Robin
+function getSmoothWeightedRoundRobinServer(
+    availableServers = servers
+) {
 
     const healthyServers =
-        servers.filter(server => server.healthy);
+        availableServers.filter(
+            server => server.healthy
+        );
 
     if (healthyServers.length === 0) {
+
         return null;
     }
 
@@ -229,163 +191,103 @@ function getSmoothWeightedRoundRobinServer() {
 
     for (const server of healthyServers) {
 
-        server.currentWeight += server.weight;
+        server.currentWeight +=
+            server.weight;
 
         if (
             selectedServer === null ||
             server.currentWeight >
                 selectedServer.currentWeight
         ) {
+
             selectedServer = server;
         }
     }
 
-    selectedServer.currentWeight -= totalWeight;
+    selectedServer.currentWeight -=
+        totalWeight;
 
     return selectedServer;
 }
 
-//forward request to another backend server if the current backend server is unhealthy
-function forwardRequest(req, res, targetServer) {
+
+// Forward request to backend
+function forwardRequest(
+    req,
+    res,
+    targetServer,
+    startTime
+) {
 
     return new Promise((resolve, reject) => {
 
+        // Proxy request configuration
         const options = {
+
             hostname: targetServer.host,
+
             port: targetServer.port,
+
             path: req.url,
+
             method: req.method,
+
             headers: req.headers
         };
 
-        const proxyRequest =
-            http.request(
-                options,
-                (proxyResponse) => {
 
-                    res.writeHead(
-                        proxyResponse.statusCode,
-                        proxyResponse.headers
-                    );
+        // Send request to backend
+        const proxyRequest = http.request(
+            options,
+            (proxyResponse) => {
 
-                    proxyResponse.pipe(res);
+                const responseTime =
+                    Date.now() - startTime;
 
-                    resolve();
-                }
-            );
-
-        proxyRequest.on("error", error => {
-
-            targetServer.healthy = false;
-
-            reject(error);
-        });
-
-        req.pipe(proxyRequest);
-    });
-}
+                // Store latest response time
+                targetServer.latency =
+                    responseTime;
 
 
-// Load Balancer
-const server = http.createServer((req, res) => {
+                // Successful backend response
+                metrics.successfulRequests++;
 
-    const startTime = Date.now();
+                metrics.byServer[
+                    targetServer.port
+                ].requests++;
 
-    // Metrics endpoint
-    if (req.url === "/metrics") {
+                metrics.byServer[
+                    targetServer.port
+                ].successful++;
 
-        res.writeHead(200, {
-            "Content-Type": "application/json"
-        });
 
-        res.end(
-            JSON.stringify(metrics, null, 2)
+                // Request log
+                console.log(
+                    `[REQUEST] ${req.method} ${req.url} → ` +
+                    `${targetServer.port} → ` +
+                    `${proxyResponse.statusCode} → ` +
+                    `${responseTime}ms`
+                );
+
+
+                // Forward response
+                res.writeHead(
+                    proxyResponse.statusCode,
+                    proxyResponse.headers
+                );
+
+                proxyResponse.pipe(res);
+
+                resolve();
+            }
         );
 
-        return;
-    }
 
-
-    // Count normal application requests
-    metrics.totalRequests++;
-
-    // shows the fastest server in the console
-    /*console.log(
-        "Fastest server:",
-        getFastestHealthyServer()?.port
-    );*/
-
-    // Find healthy backend
-    /*const targetServer =
-        getNextHealthyServer();*/
-
-    //Find fastest server
-    //const targetServer = getFastestHealthyServer();   
-    
-    //find weighted server
-    //const targetServer = getWeightedServer();
-
-    //find weighted round robin server
-    const targetServer = getSmoothWeightedRoundRobinServer();
-
-    // No healthy backend
-    if (!targetServer) {
-
-        console.log(
-            "No healthy backend servers available"
-        );
-
-        metrics.failedRequests++;
-
-
-        res.writeHead(503, {
-            "Content-Type": "application/json"
-        });
-
-
-        res.end(
-            JSON.stringify({
-                error: "Service Unavailable",
-                message:
-                    "No healthy backend servers are available"
-            })
-        );
-
-        return;
-    }
-
-    // Log forwarding
-    console.log(
-        `Forwarding ${req.method} ${req.url} → ` +
-        `localhost:${targetServer.port}`
-    );
-
-    // Proxy request configuration
-    const options = {
-
-        hostname: targetServer.host,
-
-        port: targetServer.port,
-
-        path: req.url,
-
-        method: req.method,
-
-        headers: req.headers
-    };
-
-
-    // Send request to backend
-    const proxyRequest = http.request(
-        options,
-        (proxyResponse) => {
+        // Backend request error
+        proxyRequest.on("error", (error) => {
 
             const responseTime =
                 Date.now() - startTime;
-
-            //targetServer.latency = responseTime;    
-
-            metrics.successfulRequests++;
 
             metrics.byServer[
                 targetServer.port
@@ -393,67 +295,159 @@ const server = http.createServer((req, res) => {
 
             metrics.byServer[
                 targetServer.port
-            ].successful++;
-
-            metrics.byServer[
-                targetServer.port
-            ].totalResponseTime += responseTime;
-
-            metrics.byServer[
-                targetServer.port
-            ].averageResponseTime = 
-                metrics.byServer[
-                    targetServer.port
-                ].totalResponseTime /
-                metrics.byServer[
-                    targetServer.port
-                ].successful;
+            ].failed++;
 
 
-            // Request log
-            console.log(
-                `[REQUEST] ${req.method} ${req.url} → ` +
+            // Log error
+            console.error(
+                `[ERROR] ${req.method} ${req.url} → ` +
                 `${targetServer.port} → ` +
-                `${proxyResponse.statusCode} → ` +
-                `${responseTime}ms`
+                `${responseTime}ms → ` +
+                `${error.message}`
             );
 
-            // Forward response
-            res.writeHead(
-                proxyResponse.statusCode,
-                proxyResponse.headers
+
+            // Mark backend unhealthy
+            targetServer.healthy = false;
+
+            metrics.failedRequests++;
+
+            reject(error);
+        });
+
+
+        req.pipe(proxyRequest);
+    });
+}
+
+
+// Load Balancer
+const server = http.createServer(
+    async (req, res) => {
+
+        const startTime = Date.now();
+
+
+        // Metrics endpoint
+        if (req.url === "/metrics") {
+
+            res.writeHead(200, {
+                "Content-Type": "application/json"
+            });
+
+            res.end(
+                JSON.stringify(
+                    metrics,
+                    null,
+                    2
+                )
             );
 
-            proxyResponse.pipe(res);
+            return;
         }
-    );
 
-    // Backend request error
-    proxyRequest.on("error", (error) => {
 
-        const responseTime =
-            Date.now() - startTime;
+        // Count normal application requests
+        metrics.totalRequests++;
 
-        metrics.failedRequests++;
 
-        metrics.byServer[
-            targetServer.port
-        ].requests++;
+        // Find healthy backend
+        let targetServer =
+            getSmoothWeightedRoundRobinServer();
 
-        metrics.byServer[
-            targetServer.port
-        ].failed++;
 
-        // Log error
-        console.error(
-            `[ERROR] ${req.method} ${req.url} → ` +
-            `${targetServer.port} → ` +
-            `502 → ${responseTime}ms → ` +
-            `${error.message}`
-        );
+        // No healthy backend
+        if (!targetServer) {
 
-        targetServer.healthy = false; // Mark backend unhealthy
+            console.log(
+                "No healthy backend servers available"
+            );
 
+            metrics.failedRequests++;
+
+
+            res.writeHead(503, {
+                "Content-Type": "application/json"
+            });
+
+
+            res.end(
+                JSON.stringify({
+                    error: "Service Unavailable",
+                    message:
+                        "No healthy backend servers are available"
+                })
+            );
+
+            return;
+        }
+
+
+        // Keep track of servers already attempted
+        const attemptedServers = [];
+
+        let attempts = 0;
+
+
+        // Try the selected backend and retry once if it fails
+        while (
+            targetServer &&
+            attempts <= MAX_RETRIES
+        ) {
+
+            attemptedServers.push(
+                targetServer
+            );
+
+
+            // Log forwarding
+            console.log(
+                `Attempt ${attempts + 1} → ` +
+                `localhost:${targetServer.port}`
+            );
+
+
+            try {
+
+                await forwardRequest(
+                    req,
+                    res,
+                    targetServer,
+                    startTime
+                );
+
+                // Request succeeded
+                return;
+
+            } catch (error) {
+
+                console.error(
+                    `Backend ${targetServer.port} failed`
+                );
+
+
+                attempts++;
+
+
+                // No more retries available
+                if (
+                    attempts > MAX_RETRIES
+                ) {
+
+                    break;
+                }
+
+
+                // Find another healthy backend
+                targetServer =
+                    getHealthyServerExcluding(
+                        attemptedServers
+                    );
+            }
+        }
+
+
+        // All backend attempts failed
         res.writeHead(502, {
             "Content-Type": "application/json"
         });
@@ -462,13 +456,11 @@ const server = http.createServer((req, res) => {
             JSON.stringify({
                 error: "Bad Gateway",
                 message:
-                    "Backend server failed"
+                    "All available backend servers failed"
             })
         );
-    });
-    
-    req.pipe(proxyRequest); // Forward client request body
-});
+    }
+);
 
 
 // Start load balancer
@@ -486,5 +478,4 @@ server.listen(PORT, () => {
         checkServerHealth(server);
 
     });
-
 });
