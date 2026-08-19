@@ -245,6 +245,45 @@ function getSmoothWeightedRoundRobinServer() {
     return selectedServer;
 }
 
+//forward request to another backend server if the current backend server is unhealthy
+function forwardRequest(req, res, targetServer) {
+
+    return new Promise((resolve, reject) => {
+
+        const options = {
+            hostname: targetServer.host,
+            port: targetServer.port,
+            path: req.url,
+            method: req.method,
+            headers: req.headers
+        };
+
+        const proxyRequest =
+            http.request(
+                options,
+                (proxyResponse) => {
+
+                    res.writeHead(
+                        proxyResponse.statusCode,
+                        proxyResponse.headers
+                    );
+
+                    proxyResponse.pipe(res);
+
+                    resolve();
+                }
+            );
+
+        proxyRequest.on("error", error => {
+
+            targetServer.healthy = false;
+
+            reject(error);
+        });
+
+        req.pipe(proxyRequest);
+    });
+}
 
 
 // Load Balancer
@@ -343,6 +382,8 @@ const server = http.createServer((req, res) => {
 
             const responseTime =
                 Date.now() - startTime;
+
+            //targetServer.latency = responseTime;    
 
             metrics.successfulRequests++;
 
