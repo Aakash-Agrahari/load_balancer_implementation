@@ -275,7 +275,11 @@ const server = http.createServer((req, res) => {
     //Find fastest server
     //const targetServer = getFastestHealthyServer();   
     
-    const targetServer = getWeightedServer();
+    //find weighted server
+    //const targetServer = getWeightedServer();
+
+    //find weighted round robin server
+    const targetServer = getWeightedRoundRobinServer();
 
     // No healthy backend
     if (!targetServer) {
