@@ -209,32 +209,40 @@ function getWeightedServer() {
 }
 
 //find healthy server based on weights and round robin
-function getWeightedRoundRobinServer() {
-    const healthyServers = servers.filter(server => server.healthy);
+function getSmoothWeightedRoundRobinServer() {
 
-    if (healthyServers.length === 0){
+    const healthyServers =
+        servers.filter(server => server.healthy);
+
+    if (healthyServers.length === 0) {
         return null;
     }
 
-    const weightedServers = [];
+    const totalWeight =
+        healthyServers.reduce(
+            (total, server) =>
+                total + server.weight,
+            0
+        );
 
-    for(const server of healthyServers){
-        for(let i=0; i<server.weight; i++){
-            weightedServers.push(server);
+    let selectedServer = null;
+
+    for (const server of healthyServers) {
+
+        server.currentWeight += server.weight;
+
+        if (
+            selectedServer === null ||
+            server.currentWeight >
+                selectedServer.currentWeight
+        ) {
+            selectedServer = server;
         }
     }
 
-    if(weightedServers.length === 0){
-        return null;
-    }
+    selectedServer.currentWeight -= totalWeight;
 
-    const server = weightedServers[
-        weightedRoundRobinIndex % weightedServers.length
-    ];
-
-    weightedRoundRobinIndex = (weightedRoundRobinIndex + 1) % weightedServers.length;
-
-    return server;
+    return selectedServer;
 }
 
 
