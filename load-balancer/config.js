@@ -26,7 +26,8 @@ export const config = {
             port: port,
             healthy: true,
             weight: weights[index] || 1,
-            currentWeight = 0
+            currentWeight = 0,
+            latency: Infinity
         }));
 
     })()
