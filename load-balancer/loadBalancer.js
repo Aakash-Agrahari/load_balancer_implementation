@@ -208,6 +208,35 @@ function getWeightedServer() {
     ];
 }
 
+//find healthy server based on weights and round robin
+function getWeightedRoundRobinServer() {
+    const healthyServers = servers.filter(server => server.healthy);
+
+    if (healthyServers.length === 0){
+        return null;
+    }
+
+    const weightedServers = [];
+
+    for(const server of healthyServers){
+        for(let i=0; i<server.weight; i++){
+            weightedServers.push(server);
+        }
+    }
+
+    if(weightedServers.length === 0){
+        return null;
+    }
+
+    const server = weightedServer{
+        weightedRoundRobinIndex % weightedServers.length
+    };
+
+    weightedRoundRobinIndex = (weightedRoundRobinIndex + 1) % weightedServers.length;
+
+    return server;
+}
+
 
 
 // Load Balancer
