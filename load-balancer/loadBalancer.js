@@ -287,7 +287,7 @@ const server = http.createServer((req, res) => {
     //const targetServer = getWeightedServer();
 
     //find weighted round robin server
-    const targetServer = getWeightedRoundRobinServer();
+    const targetServer = getSmoothWeightedRoundRobinServer();
 
     // No healthy backend
     if (!targetServer) {
