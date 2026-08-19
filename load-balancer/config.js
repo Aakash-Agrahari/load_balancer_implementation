@@ -9,6 +9,9 @@ export const config = {
     healthCheckTimeout:
         Number(process.env.HEALTH_CHECK_TIMEOUT) || 2000,
 
+    backendRequestTimeout:
+        Number(process.env.BACKEND_REQUEST_TIMEOUT) || 3000,    
+
     backends: (() => {
 
         const ports =
