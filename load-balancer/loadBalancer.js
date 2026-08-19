@@ -228,9 +228,9 @@ function getWeightedRoundRobinServer() {
         return null;
     }
 
-    const server = weightedServer{
+    const server = weightedServers[
         weightedRoundRobinIndex % weightedServers.length
-    };
+    ];
 
     weightedRoundRobinIndex = (weightedRoundRobinIndex + 1) % weightedServers.length;
 
