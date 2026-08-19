@@ -25,7 +25,8 @@ export const config = {
             host: "localhost",
             port: port,
             healthy: true,
-            weight: weights[index] || 1
+            weight: weights[index] || 1,
+            currentWeight = 0
         }));
 
     })()
