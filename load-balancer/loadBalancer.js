@@ -1,6 +1,11 @@
 import http from "http";
 import { config } from "./config.js";
 
+const backendAgent = new http.Agent({
+    keepAlive: true,
+    maxSockets: 100
+});
+
 const PORT = config.port;
 
 const servers = config.backends;
@@ -232,7 +237,9 @@ function forwardRequest(
 
             method: req.method,
 
-            headers: req.headers
+            headers: req.headers,
+
+            agent: backendAgent
         };
 
 
