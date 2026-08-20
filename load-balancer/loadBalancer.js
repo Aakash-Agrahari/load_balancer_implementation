@@ -282,6 +282,23 @@ function forwardRequest(
             }
         );
 
+        //Backend response timeout
+        proxyRequest.setTimeout(
+            config.backendRequestTimeout,
+            () => {
+
+                console.error(
+                    `Backend ${targetServer.port} timed out`
+                );
+
+                targetServer.healthy = false;
+
+                proxyRequest.destroy(
+                    new Error("Backend request timeout")
+                );
+            }
+        );
+
 
         // Backend request error
         proxyRequest.on("error", (error) => {
