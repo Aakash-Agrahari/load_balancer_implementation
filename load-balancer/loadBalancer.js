@@ -110,7 +110,7 @@ function checkServerHealth(server) {
 }
 
 // Run health checks periodically
-setInterval(() => {
+const healthCheckTimer = setInterval(() => {
 
     servers.forEach(server => {
 
