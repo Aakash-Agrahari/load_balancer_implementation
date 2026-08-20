@@ -10,7 +10,13 @@ export const config = {
         Number(process.env.HEALTH_CHECK_TIMEOUT) || 2000,
 
     backendRequestTimeout:
-        Number(process.env.BACKEND_REQUEST_TIMEOUT) || 3000,    
+        Number(process.env.BACKEND_REQUEST_TIMEOUT) || 3000, 
+        
+    circuitFailureThreshold:
+        Number(process.env.CIRCUIT_FAILURE_THRESHOLD) || 3,
+        
+    circuitResetTimeout:
+        Number(process.env.CIRCUIT_RESET_TIMEOUT) || 10000,    
 
     backends: (() => {
 
@@ -30,7 +36,10 @@ export const config = {
             healthy: true,
             weight: weights[index] || 1,
             currentWeight: 0,
-            latency: Infinity
+            latency: Infinity,
+            failureCount: 0,
+            circuitState: "CLOSED",
+            circuitOpenedAt: null
         }));
 
     })()
