@@ -125,6 +125,50 @@ const healthCheckTimer = setInterval(() => {
 
 }, config.healthCheckInterval);
 
+// Check circuit breaker state
+function isCircuitAvailable(server) {
+
+    // Circuit is closed
+    if (server.circuitState === "CLOSED") {
+
+        return true;
+    }
+
+
+    // Circuit is open
+    if (server.circuitState === "OPEN") {
+
+        const elapsedTime =
+            Date.now() -
+            server.circuitOpenedAt;
+
+
+        // Reset timeout has passed
+        if (
+            elapsedTime >=
+            config.circuitResetTimeout
+        ) {
+
+            server.circuitState =
+                "HALF-OPEN";
+
+            console.log(
+                `Server ${server.port} circuit is HALF-OPEN`
+            );
+
+            return true;
+        }
+
+
+        // Circuit is still open
+        return false;
+    }
+
+
+    // HALF-OPEN
+    return true;
+}
+
 
 // Find next healthy server
 function getNextHealthyServer() {
