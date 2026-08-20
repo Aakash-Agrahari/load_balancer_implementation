@@ -496,3 +496,41 @@ server.listen(PORT, () => {
 
     });
 });
+
+
+// Graceful shutdown
+function shutdown(signal) {
+
+    console.log(
+        `\n${signal} received. Starting graceful shutdown...`
+    );
+
+    // Stop health checks
+    clearInterval(healthCheckTimer);
+
+    // Stop accepting new requests
+    server.close(() => {
+
+        console.log(
+            "Load balancer stopped successfully"
+        );
+
+        process.exit(0);
+    });
+}
+
+
+// Handle Ctrl + C
+process.on("SIGINT", () => {
+
+    shutdown("SIGINT");
+
+});
+
+
+// Handle termination signal
+process.on("SIGTERM", () => {
+
+    shutdown("SIGTERM");
+
+});
