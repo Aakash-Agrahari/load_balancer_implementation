@@ -221,7 +221,7 @@ function getSmoothWeightedRoundRobinServer(
 
     const healthyServers =
         availableServers.filter(
-            server => server.healthy
+            server => server.healthy && isCircuitAvailable(server)
         );
 
     if (healthyServers.length === 0) {
@@ -298,6 +298,14 @@ function forwardRequest(
                 // Store latest response time
                 targetServer.latency =
                     responseTime;
+
+                targetServer.failureCount = 0;
+                
+                if(targetServer.circuitState === "HALF-OPEN"){
+                    targetServer.circuitState = "CLOSED";
+                    targetServer.circuitOpenedAt = null;
+                    console.log(`Circuit CLOSED for server ${targetServer.port}`);
+                }
 
 
                 // Successful backend response
