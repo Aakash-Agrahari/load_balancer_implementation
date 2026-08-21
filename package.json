@@ -2,7 +2,7 @@
   "name": "load-balancer",
   "version": "1.0.0",
   "description": "",
-  "type":"module",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "redis": "^6.2.1"
   }
 }
