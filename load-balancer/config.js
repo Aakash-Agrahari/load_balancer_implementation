@@ -16,7 +16,16 @@ export const config = {
         Number(process.env.CIRCUIT_FAILURE_THRESHOLD) || 3,
         
     circuitResetTimeout:
-        Number(process.env.CIRCUIT_RESET_TIMEOUT) || 10000,    
+        Number(process.env.CIRCUIT_RESET_TIMEOUT) || 10000,  
+        
+    rateLimitCapacity:
+        Number(process.env.RATE_LIMIT_CAPACITY) || 10,
+        
+    rateLimitRefillRate:
+        Number(process.env.RATE_LIMIT_REFILL_RATE) || 5,
+        
+    redisUrl:
+        process.env.REDIS_URL || "redis://localhost:6379",    
 
     backends: (() => {
 
