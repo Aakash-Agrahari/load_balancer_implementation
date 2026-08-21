@@ -378,6 +378,15 @@ function forwardRequest(
             // Mark backend unhealthy
             targetServer.healthy = false;
 
+            targetServer.failureCount++; // increase circuit breaker failure count
+
+            // Open circuit if failure threshold is reached
+            if(targetServer.failureCount >= config.circuitFailureThreshold){
+                targetServer.circuitState = "OPEN";
+                targetServer.circuitState = Date.now();
+                console.log(`Circuit OPEN for server ${targetServer.port}`);
+            }
+
             metrics.failedRequests++;
 
             reject(error);
