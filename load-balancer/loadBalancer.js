@@ -351,7 +351,7 @@ function forwardRequest(
                     `Backend ${targetServer.port} timed out`
                 );
 
-                targetServer.healthy = false;
+                //targetServer.healthy = false;
 
                 proxyRequest.destroy(
                     new Error("Backend request timeout")
@@ -385,14 +385,14 @@ function forwardRequest(
 
 
             // Mark backend unhealthy
-            targetServer.healthy = false;
+            //targetServer.healthy = false;
 
             targetServer.failureCount++; // increase circuit breaker failure count
 
             // Open circuit if failure threshold is reached
             if(targetServer.failureCount >= config.circuitFailureThreshold){
                 targetServer.circuitState = "OPEN";
-                targetServer.circuitState = Date.now();
+                targetServer.circuitOpenedAt = Date.now();
                 console.log(`Circuit OPEN for server ${targetServer.port}`);
             }
 
