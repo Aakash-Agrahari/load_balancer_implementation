@@ -469,6 +469,17 @@ const server = http.createServer(
                 "No healthy backend servers available"
             );
 
+            console.log(
+                "Backend States:",
+                servers.map(server => ({
+                    port: server.port,
+                    healthy: server.healthy,
+                    failureCount: server.failureCount,
+                    circuitState: server.circuitState,
+                    circuitOpenedAt: server.circuitOpenedAt
+                }))
+            );
+
             metrics.failedRequests++;
 
 
