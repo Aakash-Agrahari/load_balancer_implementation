@@ -1,5 +1,4 @@
 import express from "express";
-import { allowRequest } from "../rate-limiter/rateLimiter.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
