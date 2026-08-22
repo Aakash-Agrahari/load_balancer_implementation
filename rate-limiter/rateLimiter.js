@@ -74,3 +74,27 @@ return {
 }
 `;
 
+//Rate limiter function
+export async function allowRequest(clientKey){
+    const now = Date.now() / 1000;
+
+    const key = `rate_limiter:${clientKey}`;
+
+    const result = await redisCLient.eval(
+        tokenBucketScript,
+        {
+            keys: [Key],
+            arguments: [
+                String(config.rateLimitCapacity),
+                String(config.rateLimitRefillRate),
+                String(now)
+            ]
+        }
+    );
+
+    return{
+        allowed: Number(result[0]) === 1,
+        remainingTokens: Number(result[1])
+    };
+}
+
