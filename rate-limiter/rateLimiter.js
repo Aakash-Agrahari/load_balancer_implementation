@@ -1,9 +1,9 @@
 import {createClient} from "redis";
-import {config} from "../load-balancer/config.js";
+import {config} from "../config.js";
 
 //creating a redis client
-const redisCLient = createClient({
-    url: cofig.redisUrl
+const redisClient = createClient({
+    url: config.redisUrl
 });
 
 //fallback for redis connection error
@@ -80,10 +80,10 @@ export async function allowRequest(clientKey){
 
     const key = `rate_limiter:${clientKey}`;
 
-    const result = await redisCLient.eval(
+    const result = await redisClient.eval(
         tokenBucketScript,
         {
-            keys: [Key],
+            keys: [key],
             arguments: [
                 String(config.rateLimitCapacity),
                 String(config.rateLimitRefillRate),
