@@ -1,5 +1,6 @@
 import http from "http";
 import { config } from "./config.js";
+import {allowRequest} from "../rate-limiter/rateLimiter.js";
 
 const backendAgent = new http.Agent({
     keepAlive: true,
@@ -409,6 +410,26 @@ function forwardRequest(
 // Load Balancer
 const server = http.createServer(
     async (req, res) => {
+
+        const clientIp = req.socket.remoteAddress || "unknown";
+        const rateLimitResult = await allowRequest(clientIp);
+
+        //Rate limit exceeded
+        if(!rateLimitResult.allowed){
+            res.writeHead(429, {
+                "Content-Type": "application/json",
+                "Retry-After": "1"
+            });
+
+            res.end(
+                JSON.stringify({
+                    error: "Too Many Requests",
+                    message: "Rate Limit exceeded",
+                    remainingTokens: rateLimitResult.remainingTokens
+                })
+            );
+            return;
+        }
 
         const startTime = Date.now();
 
